@@ -1,4 +1,4 @@
-name: CI/CD Pipeline - Build and Push
+name: CI/CD Pipeline - Build, Push and Deploy
 
 on:
   push:
@@ -6,10 +6,12 @@ on:
       - main
 
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
+
+  build-and-deploy:
+    runs-on: self-hosted
 
     steps:
+
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
@@ -25,3 +27,27 @@ jobs:
           context: .
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/kubernetes-lab:${{ github.run_number }}
+
+      - name: Set Kubernetes Context
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+      - name: Update Deployment Image
+        shell: powershell
+        run: |
+          $IMAGE = "${{ secrets.DOCKERHUB_USERNAME }}/kubernetes-lab:${{ github.run_number }}"
+          (Get-Content deployment.yaml) -replace 'image: nginx:alpine', "image: $IMAGE" | Set-Content deployment.yaml
+
+      - name: Deploy to Kubernetes
+        shell: powershell
+        run: |
+          kubectl apply -f deployment.yaml
+
+      - name: Verify Deployment
+        shell: powershell
+        run: |
+          kubectl rollout status deployment/sample-web-app --timeout=60s
+          kubectl get deployment sample-web-app
+          kubectl get pods
